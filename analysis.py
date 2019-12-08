@@ -13,20 +13,26 @@ import matplotlib as mpl
 from matplotlib.patches import Polygon
 import matplotlib.cm as cm
 import random
-
 import pandas as pd
 ###############################################
-#options:
+#Configuration options:
 
 readCSV = False
 correlate = False
-tertiles = True
-i6_to_jc_cutoffs = False
-i6_to_i12_cutoffs = True
-i6_to_c24_cutoffs = True
 
+tertiles = True #true = calculate the tertiles
+Rquestion = True #true = remove the fsmortg indicator
 
-# Functions
+i6_to_jc_cutoffs = True #true = calculate the tertiles for i6 to jc
+i12_to_jc_cutoffs = True #true = calculate the tertiles for i12 to jc
+
+i6_to_i12_cutoffs = True #true = calculate the tertiles for i6 to i12
+i6_to_c24_cutoffs = True #true = calculate the tertiles for i6 to c24
+
+#data folder source
+wddata = ('/Users/garyk/Documents/code/Jivita/data/')
+
+# useful functions:
 ###############################################
 def stdDev(x):
 	'''function to compute standard deviation'''
@@ -102,8 +108,7 @@ def correlateSurveys(KEY1, KEY2):
                 print(corr(np.ma.compressed(tmp),np.ma.compressed(tmp2)))
 ####################################################
 
-wddata = ('/Users/garyk/Documents/code/Jivita/data/')
-
+#reads from the original data file, and creates a dictionary
 if readCSV:
 	reader = csv.DictReader(open(wddata+'garyk1.csv','r'))
 
@@ -115,13 +120,10 @@ if readCSV:
 	pickle.dump(result, open(wddata+"save.p", "wb" ))
 
 dataDictionary = pickle.load(open(wddata+"save.p", "rb"))
-
+#get total length for other purposes
 nSurveys = len(dataDictionary['jcslphngry'])
 
-passed = 0
-failed = 0
-
-
+#seperate keys based on their survey
 JCsurvey = []
 I6survey = []
 I12survey = []
@@ -144,6 +146,7 @@ for key in dataDictionary.keys():
         elif(key[:2]=="m3"):
             M3survey.append(key)
 
+#using the corresponding keys in the dictionary, create 'cleaned' dictionaries by survey (only keeping valid survey responses)
 i6dict = {}
 for key in I6survey:
 	i6dict[key]=[]
@@ -198,6 +201,7 @@ for key in SSsurvey:
                 dataDictionary[key][i]='-999'
         dataDictionary[key][i]=float(dataDictionary[key][i])
 
+# if correlate is true, will correlate each of the indicators
 if correlate:
 	for firstList in JCsurvey:
 	    for secondList in SSsurvey:
@@ -213,17 +217,19 @@ if correlate:
 	        tmp = np.ma.masked_array(tmp, mask)
 	        tmp2 = np.ma.masked_array(tmp2, mask)
 
-	        if(corr(np.ma.compressed(tmp),np.ma.compressed(tmp2))>0.4):
+	        if(corr(np.ma.compressed(tmp),np.ma.compressed(tmp2))>0.5):
 	            print(firstList)
 	            print(secondList)
 	            print(corr(np.ma.compressed(tmp),np.ma.compressed(tmp2)))
 
+# if tertiles is true, will create tertiles of data
 if tertiles:
+	#pandas dataframes made from dictionaries
 	jcPD = pd.DataFrame(jcdict)
 	i6PD = pd.DataFrame(i6dict)
 	i12PD = pd.DataFrame(i12dict)
 	c24PD = pd.DataFrame(c24dict)
-
+	#pandas dataframes cleaned (remove -999's)
 	cleani6=np.where((i6PD> -1).all(1))
 	cleani12=np.where((i12PD> -1).all(1))
 	cleanc24=np.where((c24PD> -1).all(1))
@@ -231,6 +237,8 @@ if tertiles:
 
 	#compare 6 month and 12 month survey results
 	if i6_to_i12_cutoffs:
+
+		#get the intersection: those who responded to both surveys
 		intersection = np.intersect1d(cleani6, cleani12)
 		i6PD_T=i6PD.T
 		i12PD_T=i12PD.T
@@ -238,97 +246,150 @@ if tertiles:
 		i6scores = np.zeros(intersection.shape)
 		i12scores = np.zeros(intersection.shape)
 
+		#set the score for what a food secure score is (depends on how many questions are used based on the Rquestion config)
+		if(Rquestion):
+			secure_score = 3
+		else:
+			secure_score = 4
+
+		#summing each indicator to get the household food insecurity score for each
 		counter = -1
 		for i in intersection:
 			counter += 1
-			for key in I6survey:
-				if(key == "i6fssqmls"):
-					i6scores[counter] -= i6PD_T[i][key]
-				else:
-					i6scores[counter] += i6PD_T[i][key]
-			for key in I12survey:
-				if(key == "i12fssqmls"):
-					i12scores[counter] -= i12PD_T[i][key]
-				else:
-					i12scores[counter] += i12PD_T[i][key]
+			if(Rquestion):
+				for key in I6survey:
+					if(key != "i6fsmortg"):
+						if(key == "i6fssqmls"):
+							i6scores[counter] -= i6PD_T[i][key]
+						else:
+							i6scores[counter] += i6PD_T[i][key]
+				for key in I12survey:
+					if(key != "i12fsmortg"):
+						if(key == "i12fssqmls"):
+							i12scores[counter] -= i12PD_T[i][key]
+						else:
+							i12scores[counter] += i12PD_T[i][key]
+			else:
+				for key in I6survey:
+					if(key == "i6fssqmls"):
+						i6scores[counter] -= i6PD_T[i][key]
+					else:
+						i6scores[counter] += i6PD_T[i][key]
+				for key in I12survey:
+					if(key == "i12fssqmls"):
+						i12scores[counter] -= i12PD_T[i][key]
+					else:
+						i12scores[counter] += i12PD_T[i][key]
 
 		scores_i6_pd = pd.DataFrame(data = i6scores[:])
-		print(scores_i6_pd.keys())
 		# scores_i6_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
 		# plt.show()
-
 		scores_i12_pd = pd.DataFrame(data = i12scores[:])
 		# scores_i12_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
 		# plt.show()
 
-		secure_i6 = np.where(scores_i6_pd[0] == 4)[0]
-		insecure_i6 =  np.where(scores_i6_pd[0] > 4)[0]
+		#seperate food secure and insecure by HFI score
+		secure_i6 = np.where(scores_i6_pd[0] == secure_score)[0]
+		insecure_i6 =  np.where(scores_i6_pd[0] > secure_score)[0]
 
-		secure_i12 = np.where(scores_i12_pd[0] == 4)[0]
-		insecure_i12 =  np.where(scores_i12_pd[0] > 4)[0]
+		secure_i12 = np.where(scores_i12_pd[0] == secure_score)[0]
+		insecure_i12 =  np.where(scores_i12_pd[0] > secure_score)[0]
 
+		#determine number classified consistently as secure between i6 and i12
 		intersection = np.intersect1d(secure_i6, secure_i12)
 
-		accuracy = intersection.shape[0]/len(secure_i6)
-		print("i6 secure that are in i12: "+ str(accuracy))
+		secure = intersection.shape[0]/len(secure_i6)
 
-		insecure_i6_pd = scores_i6_pd[scores_i6_pd[0] > 4]
+		#determine number consistently as insecure between i6 and i12
+		intersection = np.intersect1d(insecure_i6, insecure_i12)
+		insecure = intersection.shape[0]/len(insecure_i6)
+
+		#taking the food insecure group, get tertile scores
+		insecure_i6_pd = scores_i6_pd[scores_i6_pd[0] > secure_score]
 		i6_cutoffs = insecure_i6_pd.quantile([0.33,0.66])
 
-		insecure_i12_pd = scores_i12_pd[scores_i12_pd[0] > 4]
+		insecure_i12_pd = scores_i12_pd[scores_i12_pd[0] > secure_score]
 		i12_cutoffs = insecure_i12_pd.quantile([0.33,0.66])
 
+		#find mild insecure tertile, calculate consistency between i6 and i12
 		i6_insecure_s = np.where(insecure_i6_pd <= i6_cutoffs[0][0.33])[0]
 		i12_insecure_s = np.where(insecure_i12_pd <= i12_cutoffs[0][0.33])[0]
 
 		intersection = np.intersect1d(insecure_i6[i6_insecure_s], insecure_i12[i12_insecure_s])
-		print(i6_cutoffs)
-		print(i12_cutoffs)
-		insecure_accuracy = intersection.shape[0]/len(i6_insecure_s)
-		print(insecure_accuracy)
 
+		insecure_accuracy1 = intersection.shape[0]/len(i6_insecure_s)
+
+		#find moderate insecure tertile, calculate consistency between i6 and i12
 		i6_insecure_s = np.where((insecure_i6_pd > i6_cutoffs[0][0.33]) & (insecure_i6_pd <= i6_cutoffs[0][0.66]))[0]
 		i12_insecure_s = np.where((insecure_i12_pd > i12_cutoffs[0][0.33]) & (insecure_i12_pd <= i12_cutoffs[0][0.66]))[0]
 
 		intersection = np.intersect1d(insecure_i6[i6_insecure_s], insecure_i12[i12_insecure_s])
 
-		insecure_accuracy = intersection.shape[0]/len(i6_insecure_s)
-		print(insecure_accuracy)
+		insecure_accuracy2 = intersection.shape[0]/len(i6_insecure_s)
 
+		#find severe insecure tertile, calculate consistency between i6 and i12
 		i6_insecure_s = np.where(insecure_i6_pd > i6_cutoffs[0][0.66])[0]
 		i12_insecure_s = np.where(insecure_i12_pd > i12_cutoffs[0][0.66])[0]
 
 		intersection = np.intersect1d(insecure_i6[i6_insecure_s], insecure_i12[i12_insecure_s])
 
-		insecure_accuracy = intersection.shape[0]/len(i6_insecure_s)
-		print(insecure_accuracy)
+		insecure_accuracy3 = intersection.shape[0]/len(i6_insecure_s)
 
-		print(len(i6_insecure_s))
+		#write results to csv
+		with open(wddata + 'i6_to_i12_comparison', 'w') as writefile:
+			writefile  = csv.writer(writefile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+			writefile.writerow(['category', 'percent', 'cutoff_i6', 'cutoff_i12'])
+			writefile.writerow(['Food_secure', secure])
+			writefile.writerow(['Food_insecure', insecure])
+			writefile.writerow(['tertile1', insecure_accuracy1, i6_cutoffs[0][0.33], i12_cutoffs[0][0.33]])
+			writefile.writerow(['tertile2', insecure_accuracy2, i6_cutoffs[0][0.66], i12_cutoffs[0][0.66]])
+			writefile.writerow(['tertile3', insecure_accuracy3])
 
+	#compare 6 month and 24 month survey results
 	if i6_to_c24_cutoffs:
 	  intersection = np.intersect1d(cleani6, cleanc24)
 	  i6PD_T=i6PD.T
 	  c24PD_T=c24PD.T
 
+	  #get the intersection: those who responded to both surveys
 	  i6scores = np.zeros(intersection.shape)
 	  c24scores = np.zeros(intersection.shape)
 
+	  #set the score for what a food secure score is (depends on how many questions are used based on the Rquestion config)
+	  if(Rquestion):
+		  secure_score = 3
+	  else:
+		  secure_score = 4
+
+	  #summing each indicator to get the household food insecurity score for each
 	  counter = -1
 	  for i in intersection:
-	    counter += 1
-	    for key in I6survey:
-	      if(key == "i6fssqmls"):
-	        i6scores[counter] -= i6PD_T[i][key]
-	      else:
-	        i6scores[counter] += i6PD_T[i][key]
-	    for key in C24survey:
-	      if(key == "c24fssqmls"):
-	        c24scores[counter] -= c24PD_T[i][key]
-	      else:
-	        c24scores[counter] += c24PD_T[i][key]
-
+		  counter += 1
+		  if(Rquestion):
+			  for key in I6survey:
+				  if(key!='i6fsmortg'):
+					  if(key == "i6fssqmls"):
+						  i6scores[counter] -= i6PD_T[i][key]
+					  else:
+						  i6scores[counter] += i6PD_T[i][key]
+			  for key in C24survey:
+				  if(key!='c24fsmortg'):
+					  if(key == "c24fssqmls"):
+						  c24scores[counter] -= c24PD_T[i][key]
+					  else:
+						  c24scores[counter] += c24PD_T[i][key]
+		  else:
+			  for key in I6survey:
+				  if(key == "i6fssqmls"):
+					  i6scores[counter] -= i6PD_T[i][key]
+				  else:
+					  i6scores[counter] += i6PD_T[i][key]
+			  for key in C24survey:
+				  if(key == "c24fssqmls"):
+					  c24scores[counter] -= c24PD_T[i][key]
+				  else:
+					  c24scores[counter] += c24PD_T[i][key]
 	  scores_i6_pd = pd.DataFrame(data = i6scores[:])
-	  print(scores_i6_pd.keys())
 	  # scores_i6_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
 	  # plt.show()
 
@@ -336,50 +397,65 @@ if tertiles:
 	  # scores_c24_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
 	  # plt.show()
 
-	  secure_i6 = np.where(scores_i6_pd[0] == 4)[0]
-	  insecure_i6 =  np.where(scores_i6_pd[0] > 4)[0]
+	  #seperate food secure and insecure by HFI score
+	  secure_i6 = np.where(scores_i6_pd[0] == secure_score)[0]
+	  insecure_i6 =  np.where(scores_i6_pd[0] > secure_score)[0]
 
-	  secure_c24 = np.where(scores_c24_pd[0] == 4)[0]
-	  insecure_c24 =  np.where(scores_c24_pd[0] > 4)[0]
+	  secure_c24 = np.where(scores_c24_pd[0] == secure_score)[0]
+	  insecure_c24 =  np.where(scores_c24_pd[0] > secure_score)[0]
 
+	  #determine number classified consistently as secure between i6 and c24
 	  intersection = np.intersect1d(secure_i6, secure_c24)
+	  secure = intersection.shape[0]/len(secure_i6)
 
-	  accuracy = intersection.shape[0]/len(secure_i6)
-	  print("i6 secure that are in c24: "+ str(accuracy))
+	  #determine number consistently as insecure between i6 and c24
+	  intersection = np.intersect1d(insecure_i6, insecure_c24)
+	  insecure = intersection.shape[0]/len(insecure_i6)
 
-	  insecure_i6_pd = scores_i6_pd[scores_i6_pd[0] > 4]
+	  #taking the food insecure group, get tertile scores
+	  insecure_i6_pd = scores_i6_pd[scores_i6_pd[0] > secure_score]
 	  i6_cutoffs = insecure_i6_pd.quantile([0.33,0.66])
 
-	  insecure_c24_pd = scores_c24_pd[scores_c24_pd[0] > 4]
+	  insecure_c24_pd = scores_c24_pd[scores_c24_pd[0] > secure_score]
 	  c24_cutoffs = insecure_c24_pd.quantile([0.33,0.66])
 
+	  #find mild insecure tertile, calculate consistency between i6 and c24
 	  i6_insecure_s = np.where(insecure_i6_pd <= i6_cutoffs[0][0.33])[0]
 	  c24_insecure_s = np.where(insecure_c24_pd <= c24_cutoffs[0][0.33])[0]
 
 	  intersection = np.intersect1d(insecure_i6[i6_insecure_s], insecure_c24[c24_insecure_s])
-	  print(i6_cutoffs)
-	  print(c24_cutoffs)
-	  insecure_accuracy = intersection.shape[0]/len(i6_insecure_s)
-	  print(insecure_accuracy)
 
+	  insecure_accuracy1 = intersection.shape[0]/len(i6_insecure_s)
+
+	  #find moderate insecure tertile, calculate consistency between i6 and i12
 	  i6_insecure_s = np.where((insecure_i6_pd > i6_cutoffs[0][0.33]) & (insecure_i6_pd <= i6_cutoffs[0][0.66]))[0]
 	  c24_insecure_s = np.where((insecure_c24_pd > c24_cutoffs[0][0.33]) & (insecure_c24_pd <= c24_cutoffs[0][0.66]))[0]
 
 	  intersection = np.intersect1d(insecure_i6[i6_insecure_s], insecure_c24[c24_insecure_s])
 
-	  insecure_accuracy = intersection.shape[0]/len(i6_insecure_s)
-	  print(insecure_accuracy)
+	  insecure_accuracy2 = intersection.shape[0]/len(i6_insecure_s)
 
+	  #find severe insecure tertile, calculate consistency between i6 and i12
 	  i6_insecure_s = np.where(insecure_i6_pd > i6_cutoffs[0][0.66])[0]
 	  c24_insecure_s = np.where(insecure_c24_pd > c24_cutoffs[0][0.66])[0]
 
 	  intersection = np.intersect1d(insecure_i6[i6_insecure_s], insecure_c24[c24_insecure_s])
 
-	  insecure_accuracy = intersection.shape[0]/len(i6_insecure_s)
-	  print(insecure_accuracy)
-	  print(len(i6_insecure_s))
+	  insecure_accuracy3 = intersection.shape[0]/len(i6_insecure_s)
 
+	#write results to csv
+	with open(wddata + 'i6_to_c24_comparison', 'w') as writefile:
+		writefile  = csv.writer(writefile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+		writefile.writerow(['category', 'percent', 'cutoff_i6' , 'cutoff_c24'])
+		writefile.writerow(['Food_secure', secure])
+		writefile.writerow(['Food_insecure', insecure])
+		writefile.writerow(['tertile1', insecure_accuracy1, i6_cutoffs[0][0.33], c24_cutoffs[0][0.33]])
+		writefile.writerow(['tertile2', insecure_accuracy2, i6_cutoffs[0][0.66], c24_cutoffs[0][0.66]])
+		writefile.writerow(['tertile3', insecure_accuracy3])
+
+	#compare the full HFI scores to a score from fewer questions on the JC survey
 	if i6_to_jc_cutoffs:
+		#find intersection to represent those who logged responses for both
 		intersection = np.intersect1d(cleani6, cleanjc)
 		jcPD_T=jcPD.T
 		i6PD_T=i6PD.T
@@ -391,69 +467,167 @@ if tertiles:
 		for i in intersection:
 			counter += 1
 			for key in I6survey:
-				if(key == "i6fssqmls" or key == "i6fsrice"):
-					i6scores[counter] -= i6PD_T[i][key]
-				else:
-					i6scores[counter] += i6PD_T[i][key]
-			for key in JCsurvey:
-				if(key == "jcswor" or key == "jcnofood" or key == "jcslphngry" or key == "jcdayhngry"):
-					jcscores[counter] -= jcPD_T[i][key]
-				else:
+				if(key!='i6fsmortg'):
+					if(key == "i6fssqmls"):
+						i6scores[counter] -= i6PD_T[i][key]
+					else:
+					    i6scores[counter] += i6PD_T[i][key]
+			# using the food security questions in JC survey
+			#"jcfsrice"
+			for key in ["jcfsrice", "jcfswor", "jcnofood", "jcslphngry", "jcdayhngry"]:
 					jcscores[counter] += jcPD_T[i][key]
 
 		scores_i6_pd = pd.DataFrame(data = i6scores[:])
+		# scores_i6_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+		# plt.show()
 		scores_jc_pd = pd.DataFrame(data = jcscores[:])
+		# scores_jc_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+		# plt.show()
 
-		secure_i6_pd = scores_i6_pd[scores_i6_pd[0] == -2]
-		insecure_i6_pd =  scores_i6_pd[scores_i6_pd[0] > -2]
+		i6_secure_score = 3
+		jc_secure_score = 0
 
-		i6_cutoffs = scores_i6_pd.quantile([0.33,0.66])
-		jc_cutoffs = scores_jc_pd.quantile([0.33,0.66])
+		secure_i6 = np.where(scores_i6_pd[0] == i6_secure_score)[0]
+		insecure_i6 =  np.where(scores_i6_pd[0] > i6_secure_score)[0]
 
+		secure_jc = np.where(scores_jc_pd[0] == jc_secure_score)[0]
+		insecure_jc =  np.where(scores_jc_pd[0] > jc_secure_score)[0]
+
+		#determine number classified consistently as secure between i6 and jc
+		intersection = np.intersect1d(secure_i6, secure_jc)
+		secure = intersection.shape[0]/len(secure_i6)
+
+		#determine number consistently as insecure between i6 and jc
+		intersection = np.intersect1d(insecure_i6, insecure_jc)
+		insecure = intersection.shape[0]/len(insecure_i6)
+
+		insecure_i6_pd = scores_i6_pd[scores_i6_pd[0] > i6_secure_score]
+		i6_cutoffs = insecure_i6_pd.quantile([0.33,0.66])
+
+		insecure_jc_pd = scores_jc_pd[scores_jc_pd[0] > jc_secure_score]
+		jc_cutoffs = insecure_jc_pd.quantile([0.33,0.66])
+
+		#mild insecurity group, calculate consistency:
 		i6_insecure = np.where(scores_i6_pd < i6_cutoffs[0][0.33])
-		jc_insecure = np.where(scores_jc_pd < jc_cutoffs[0][0.33])
+		jc_insecure = np.where(scores_jc_pd <= jc_cutoffs[0][0.33])
 
 		scores_i6_pd = insecure_i6_pd
 
-		intersection = np.intersect1d(i6_insecure[0], jc_insecure)
+		intersection = np.intersect1d(i6_insecure, jc_insecure)
 
-		insecure_accuracy = intersection.shape[0]/scores_i6_pd.shape[0]
-		print(insecure_accuracy)
-		#
-		# insecure_accuracy = intersection.shape[0]/scores_jc_pd.shape[0]
-		# print(insecure_accuracy)
+		insecure_accuracy1 = intersection.shape[0]/len(i6_insecure[0])
 
-		i6_insecure = np.where((scores_i6_pd >= i6_cutoffs[0][0.33]) & (scores_jc_pd <= i6_cutoffs[0][0.66]))
-		jc_insecure = np.where((scores_jc_pd >= jc_cutoffs[0][0.33]) & (scores_jc_pd <= jc_cutoffs[0][0.66]))
+		#moderate insecurity group, calculate consistency:
+		i6_insecure = np.where((scores_i6_pd >= i6_cutoffs[0][0.33]) & (scores_i6_pd <= i6_cutoffs[0][0.66]))
+		jc_insecure = np.where((scores_jc_pd > jc_cutoffs[0][0.33]) & (scores_jc_pd <= jc_cutoffs[0][0.66]))
 
 		intersection = np.intersect1d(i6_insecure, jc_insecure)
 
-		insecure_accuracy = intersection.shape[0]/len(i6_insecure[0])
-		print(insecure_accuracy)
+		insecure_accuracy2 = intersection.shape[0]/len(i6_insecure[0])
 
-		insecure_accuracy = intersection.shape[0]/len(jc_insecure[0])
-		print(insecure_accuracy)
-
+		#severe insecurity group, calculate consistency:
 		i6_insecure = np.where(scores_i6_pd > i6_cutoffs[0][0.66])
 		jc_insecure = np.where(scores_jc_pd > jc_cutoffs[0][0.66])
 
 		intersection = np.intersect1d(i6_insecure, jc_insecure)
 
-		insecure_accuracy = intersection.shape[0]/len(i6_insecure[0])
-		print(insecure_accuracy)
-		print(len(i6_insecure_s))
+		insecure_accuracy3 = intersection.shape[0]/len(i6_insecure[0])
 
-		# insecure_accuracy = intersection.shape[0]/len(jc_insecure[0])
-		# print(insecure_accuracy)
+		#write results to csv
+		with open(wddata + 'i6_to_jc_comparison', 'w') as writefile:
+			writefile  = csv.writer(writefile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+			writefile.writerow(['category', 'percent', 'cutoff_i6', 'cutoff_jc'])
+			writefile.writerow(['Food_secure', secure])
+			writefile.writerow(['Food_insecure', insecure])
+			writefile.writerow(['tertile1', insecure_accuracy1, i6_cutoffs[0][0.33], jc_cutoffs[0][0.33]])
+			writefile.writerow(['tertile2', insecure_accuracy2, i6_cutoffs[0][0.66], jc_cutoffs[0][0.66]])
+			writefile.writerow(['tertile3', insecure_accuracy3])
+	#compare the full HFI scores to a score from fewer questions on the JC survey
+	if i12_to_jc_cutoffs:
+	  #find intersection to represent those who logged responses for both
+	  intersection = np.intersect1d(cleani12, cleanjc)
+	  jcPD_T=jcPD.T
+	  i12PD_T=i12PD.T
 
-	# for key in I6survey:
-	# 	i6PD[key]
-	# print(pd.Series(i6PD(I6survey)==0))
-	# for i in range(len(dataDictionary['sectorid_j3'])):
-	# 	print(i)
-	# 	print(jcPD[i])
-	# 	if((jcPD[i] > -1).all(jcPD.dtypes) and (i6PD[i] > -1).all(i6PD.dtypes)):
-	# 		user_ids.append(i)
-	#
-	# ci6PD = jc_i6_pd.where()
-	# cjcPD = jcPD.where(i6PD[I6survey]> -1 and i6PD > -1)
+	  i12scores = np.zeros(intersection.shape)
+	  jcscores = np.zeros(intersection.shape)
+
+	  counter = -1
+	  for i in intersection:
+	    counter += 1
+	    for key in I12survey:
+	      if(key!='i12fsmortg'):
+	        if(key == "i12fssqmls"):
+	          i12scores[counter] -= i12PD_T[i][key]
+	        else:
+	            i12scores[counter] += i12PD_T[i][key]
+	    # using the food security questions in JC survey
+	    #"jcfsrice"
+	    for key in ["jcfsrice", "jcfswor", "jcnofood", "jcslphngry", "jcdayhngry"]:
+	        jcscores[counter] += jcPD_T[i][key]
+
+	  scores_i12_pd = pd.DataFrame(data = i12scores[:])
+	  # scores_i12_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+	  # plt.show()
+	  scores_jc_pd = pd.DataFrame(data = jcscores[:])
+	  # scores_jc_pd.plot(kind='hist', bins=[-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+	  # plt.show()
+
+	  i12_secure_score = 3
+	  jc_secure_score = 0
+
+	  secure_i12 = np.where(scores_i12_pd[0] == i12_secure_score)[0]
+	  insecure_i12 =  np.where(scores_i12_pd[0] > i12_secure_score)[0]
+
+	  secure_jc = np.where(scores_jc_pd[0] == jc_secure_score)[0]
+	  insecure_jc =  np.where(scores_jc_pd[0] > jc_secure_score)[0]
+
+	  #determine number classified consistently as secure between i12 and jc
+	  intersection = np.intersect1d(secure_i12, secure_jc)
+	  secure = intersection.shape[0]/len(secure_i12)
+
+	  #determine number consistently as insecure between i12 and jc
+	  intersection = np.intersect1d(insecure_i12, insecure_jc)
+	  insecure = intersection.shape[0]/len(insecure_i12)
+
+	  insecure_i12_pd = scores_i12_pd[scores_i12_pd[0] > i12_secure_score]
+	  i12_cutoffs = insecure_i12_pd.quantile([0.33,0.66])
+
+	  insecure_jc_pd = scores_jc_pd[scores_jc_pd[0] > jc_secure_score]
+	  jc_cutoffs = insecure_jc_pd.quantile([0.33,0.66])
+
+	  #mild insecurity group, calculate consistency:
+	  i12_insecure = np.where(scores_i12_pd < i12_cutoffs[0][0.33])
+	  jc_insecure = np.where(scores_jc_pd <= jc_cutoffs[0][0.33])
+
+	  scores_i12_pd = insecure_i12_pd
+
+	  intersection = np.intersect1d(i12_insecure, jc_insecure)
+
+	  insecure_accuracy1 = intersection.shape[0]/len(i12_insecure[0])
+
+	  #moderate insecurity group, calculate consistency:
+	  i12_insecure = np.where((scores_i12_pd >= i12_cutoffs[0][0.33]) & (scores_i12_pd <= i12_cutoffs[0][0.66]))
+	  jc_insecure = np.where((scores_jc_pd > jc_cutoffs[0][0.33]) & (scores_jc_pd <= jc_cutoffs[0][0.66]))
+
+	  intersection = np.intersect1d(i12_insecure, jc_insecure)
+
+	  insecure_accuracy2 = intersection.shape[0]/len(i12_insecure[0])
+
+	  #severe insecurity group, calculate consistency:
+	  i12_insecure = np.where(scores_i12_pd > i12_cutoffs[0][0.66])
+	  jc_insecure = np.where(scores_jc_pd > jc_cutoffs[0][0.66])
+
+	  intersection = np.intersect1d(i12_insecure, jc_insecure)
+
+	  insecure_accuracy3 = intersection.shape[0]/len(i12_insecure[0])
+
+	  #write results to csv
+	  with open(wddata + 'i12_to_jc_comparison', 'w') as writefile:
+	    writefile  = csv.writer(writefile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+	    writefile.writerow(['category', 'percent', 'cutoff_i12', 'cutoff_jc'])
+	    writefile.writerow(['Food_secure', secure])
+	    writefile.writerow(['Food_insecure', insecure])
+	    writefile.writerow(['tertile1', insecure_accuracy1, i12_cutoffs[0][0.33], jc_cutoffs[0][0.33]])
+	    writefile.writerow(['tertile2', insecure_accuracy2, i12_cutoffs[0][0.66], jc_cutoffs[0][0.66]])
+	    writefile.writerow(['tertile3', insecure_accuracy3])
